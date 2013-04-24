@@ -42,6 +42,8 @@ static TextLayer big_time_layer;
 static TextLayer seconds_time_layer;
 static Layer line_layer;
 static BmpContainer button_labels;
+// display mode (TOTAL_TIME or LAP_TIME)
+static int display_mode = 0;
 
 
 // Lap time display
@@ -79,10 +81,13 @@ static int busy_animating = 0;
 #define FONT_LAPS RESOURCE_ID_FONT_DEJAVU_SANS_SUBSET_22
 
 #define BUTTON_LAP BUTTON_ID_DOWN
-#define BUTTON_RUN BUTTON_ID_SELECT
-#define BUTTON_RESET BUTTON_ID_UP
+#define BUTTON_RUN BUTTON_ID_UP
+#define BUTTON_RESET BUTTON_ID_SELECT
 
-void toggle_stopwatch_handler(ClickRecognizerRef recognizer, Window *window);
+// Display modes
+#define TOTAL_TIME 0
+#define LAP_TIME 1
+
 void config_provider(ClickConfig **config, Window *window);
 void handle_init(AppContextRef ctx);
 time_t time_seconds();
@@ -90,6 +95,7 @@ void stop_stopwatch();
 void start_stopwatch();
 void toggle_stopwatch_handler(ClickRecognizerRef recognizer, Window *window);
 void reset_stopwatch_handler(ClickRecognizerRef recognizer, Window *window);
+void switch_view_handler(ClickRecognizerRef recognizer, Window *window);
 void update_stopwatch();
 void handle_timer(AppContextRef ctx, AppTimerHandle handle, uint32_t cookie);
 void pbl_main(void *params);
@@ -216,6 +222,16 @@ void reset_stopwatch_handler(ClickRecognizerRef recognizer, Window *window) {
     clear_stored_laps();
 }
 
+void switch_view_handler(ClickRecognizerRef recognizer, Window *window) {
+    if(busy_animating) return;
+    if (display_mode == TOTAL_TIME)
+      display_mode = LAP_TIME;
+    else
+      display_mode = TOTAL_TIME;
+
+    update_stopwatch();
+}
+
 void lap_time_handler(ClickRecognizerRef recognizer, Window *window) {
     if(busy_animating) return;
     time_t elapsed = elapsed_time;
@@ -229,11 +245,17 @@ void update_stopwatch() {
     static char deciseconds_time[] = ".0";
     static char seconds_time[] = ":00";
 
+    
+    static time_t time_to_be_displayed = 0;
+    if (display_mode == TOTAL_TIME)
+      time_to_be_displayed = elapsed_time;
+    else
+      time_to_be_displayed = elapsed_time - last_lap_time;
     // Now convert to hours/minutes/seconds.
-    int tenths = (elapsed_time / 100) % 10;
-    int seconds = (elapsed_time / 1000) % 60;
-    int minutes = (elapsed_time / 60000) % 60;
-    int hours = elapsed_time / 3600000;
+    int tenths = (time_to_be_displayed / 100) % 10;
+    int seconds = (time_to_be_displayed / 1000) % 60;
+    int minutes = (time_to_be_displayed / 60000) % 60;
+    int hours = time_to_be_displayed / 3600000;
 
     // We can't fit three digit hours, so stop timing here.
     if(hours > 99) {
@@ -337,7 +359,9 @@ void handle_display_lap_times(ClickRecognizerRef recognizer, Window *window) {
 
 void config_provider(ClickConfig **config, Window *window) {
     config[BUTTON_RUN]->click.handler = (ClickHandler)toggle_stopwatch_handler;
-    config[BUTTON_RESET]->click.handler = (ClickHandler)reset_stopwatch_handler;
+    config[BUTTON_RUN]->long_click.handler = (ClickHandler)reset_stopwatch_handler;
+    config[BUTTON_RUN]->long_click.delay_ms = 700;
+    config[BUTTON_RESET]->click.handler = (ClickHandler)switch_view_handler;
     config[BUTTON_LAP]->click.handler = (ClickHandler)lap_time_handler;
     config[BUTTON_LAP]->long_click.handler = (ClickHandler)handle_display_lap_times;
     config[BUTTON_LAP]->long_click.delay_ms = 700;
